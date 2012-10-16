@@ -2,14 +2,15 @@
 Django Debug Toolbar Memcache
 =============================
 
-This is a fork of Ross's excellent Memcache Debug Toolbar. It's a Memcache Debug Toolbar
-is an add-on for Django Debug Toolbar for tracking memcached usage. It currently
-supports both the ``pylibmc`` and ``memcache`` libraries.
+This is a fork of Ross's excellent Memcache Debug Toolbar. It's an add-on for Django
+Debug Toolbar for tracking memcached usage. It currently supports both the ``pylibmc``
+and ``memcache`` libraries.
 
-In the fork I'm using more of django-debug-toolbar to implement this panel. It is
-based on the sql toolbar and has similar presentation and information.
+In this fork I'm refactoring the project to be more in line with django-debug-toolbar
+panels. And I use its utilities and helpers to implement this panel. It is based on the
+sql toolbar and has similar presentation and information.
 
-I also did following technical changes:
+These are some further technical differences from Memcache Debug Toolbar:
 
 * No more inheriting client classes. Just using replace_call on the client methods. Which means explicit import is not needed
 * Use utilities from debug_toolbar. Not sure why that would blow up.
