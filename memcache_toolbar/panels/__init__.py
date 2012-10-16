@@ -2,110 +2,107 @@
 from __future__ import absolute_import
 
 from datetime import datetime
-from debug_toolbar.panels import DebugPanel
-from django.conf import settings
-from django.template.loader import render_to_string
-from django.utils.translation import ugettext_lazy as _
-from os.path import dirname, realpath
-import django
 import logging
-import SocketServer
-import traceback
+from os.path import dirname, realpath
+import sys
 
+from debug_toolbar.middleware import DebugToolbarMiddleware
+from debug_toolbar.panels import DebugPanel
+from debug_toolbar.utils import tidy_stacktrace, get_stack, ms_from_timedelta, get_template_info
+from django.conf import settings
+from django.template import Node
+from django.template.loader import render_to_string
+from django.utils.html import escape
+from django.utils.safestring import mark_safe
+from django.utils.translation import ugettext_lazy as _
+
+# Get config vars
+
+toolbar_config = getattr(settings, 'DEBUG_TOOLBAR_CONFIG', {})
+ENABLE_STACKTRACES = toolbar_config.get('ENABLE_STACKTRACES', True)
 
 logger = logging.getLogger(__name__)
 
-class Calls:
-    def __init__(self):
-        self.reset()
+def record(func, *args, **kwargs):
+    djdt = DebugToolbarMiddleware.get_current()
+    if not djdt:
+        return func(*args, **kwargs)
 
-    def reset(self):
-        self._calls = []
+    panel = djdt.get_panel(BasePanel)
 
-    def append(self, call):
-        self._calls.append(call)
+    # Get stacktrace
+    if ENABLE_STACKTRACES:
+        stacktrace = tidy_stacktrace(reversed(get_stack()))
+    else:
+        stacktrace = []
 
-    def calls(self):
-        return self._calls
+    # Get template info
+    template_info = None
+    cur_frame = sys._getframe().f_back
+    try:
+        while cur_frame is not None:
+            if cur_frame.f_code.co_name == 'render':
+                node = cur_frame.f_locals['self']
+                if isinstance(node, Node):
+                    template_info = get_template_info(node.source)
+                    break
+            cur_frame = cur_frame.f_back
+    except:
+        pass
+    del cur_frame
 
-    def size(self):
-        return len(self._calls)
+    # Find args
+    cache_args = None
+    # first arg is self, do we have another
+    if len(args) > 1:
+        cache_args = args[1]
+        # is it a dictionary (most likely multi)
+        if isinstance(cache_args, dict):
+            # just use it's keys
+            cache_args = cache_args.keys()
 
-    def last(self):
-        return self._calls[-1]
+    # the clock starts now
+    start = datetime.now()
+    try:
+        return func(*args, **kwargs)
+    finally:
+        # the clock stops now
+        duration = ms_from_timedelta(datetime.now() - start)
+        call = {
+            'function': func.__name__,
+            'args': cache_args,
+            'duration': duration,
+            'stacktrace': stacktrace,
+            'template_info': template_info,
+        }
+        panel.record(**call)
 
-# NOTE this is not even close to thread-safe/aware
-instance = Calls()
-
-# based on the function with the same name in ddt's sql, i'd rather just use it
-# than copy it, but i can't import it without things blowing up
-django_path = realpath(dirname(django.__file__))
-socketserver_path = realpath(dirname(SocketServer.__file__))
-def tidy_stacktrace(strace):
-    trace = []
-    for s in strace[:-1]:
-        s_path = realpath(s[0])
-        if getattr(settings, 'DEBUG_TOOLBAR_CONFIG', {}).get('HIDE_DJANGO_SQL', True) \
-            and django_path in s_path and not 'django/contrib' in s_path:
-            continue
-        if socketserver_path in s_path:
-            continue
-        trace.append((s[0], s[1], s[2], s[3]))
-    return trace
-
-def record(func):
-    def recorder(*args, **kwargs):
-        stacktrace = tidy_stacktrace(traceback.extract_stack())
-        call = {'function': func.__name__, 'args': None, 
-                'stacktrace': stacktrace}
-        instance.append(call)
-        # the try here is just being extra safe, it should not happen
-        try:
-            a = None
-            # first arg is self, do we have another
-            if len(args) > 1:
-                a = args[1]
-                # is it a dictionary (most likely multi)
-                if isinstance(a, dict):
-                    # just use it's keys
-                    a = a.keys()
-            # store the args
-            call['args'] = a
-        except e:
-            logger.exception('tracking of call args failed')
-        ret = None
-        try:
-            # the clock starts now
-            call['start'] = datetime.now()
-            ret = func(*args, **kwargs)
-        finally:
-            # the clock stops now
-            dur = datetime.now() - call['start']
-            call['duration'] = (dur.seconds * 1000) + (dur.microseconds / 1000.0)
-        return ret
-    return recorder
 
 
 class BasePanel(DebugPanel):
     name = 'Memcache'
     has_content = True
 
-    def process_request(self, request):
-        instance.reset()
+    def __init__(self, *args, **kwargs):
+        super(BasePanel, self).__init__(*args, **kwargs)
+        self._cache_time = 0
+        self._num_calls = 0
+        self._calls = []
+
+    def record(self, **call):
+        self._cache_time += call['duration']
+        self._num_calls += 1
+        self._calls.append(call)
 
     def nav_title(self):
         return _('Memcache')
 
     def nav_subtitle(self):
-        duration = 0
-        calls = instance.calls()
-        for call in calls:
-            duration += call['duration']
-        n = len(calls)
-        if (n > 0):
-            return "%d calls, %0.2fms" % (n, duration)
-        else:
-            return "0 calls"
+        return "%d %s in %.2fms" % (
+            self._num_calls,
+            (self._num_calls == 1) and 'call' or 'calls',
+            self._cache_time
+            )
 
     def title(self):
         return _('Memcache Calls')
@@ -114,16 +111,24 @@ class BasePanel(DebugPanel):
         return ''
 
     def content(self):
-        duration = 0
-        calls = instance.calls()
+        calls = self._calls
+
         for call in calls:
-            duration += call['duration']
+            stacktrace = []
+            for frame in call['stacktrace']:
+                params = map(escape, frame[0].rsplit('/', 1) + list(frame[1:]))
+                try:
+                    stacktrace.append(u'<span class="path">{0}/</span><span class="file">{1}</span> in <span class="func">{3}</span>(<span class="lineno">{2}</span>)\n  <span class="code">{4}</span>'.format(*params))
+                except IndexError:
+                    # This frame doesn't have the expected format, so skip it and move on to the next one
+                    continue
+            call['stacktrace'] = mark_safe('\n'.join(stacktrace))
 
         context = self.context.copy()
         context.update({
             'calls': calls,
             'count': len(calls),
-            'duration': duration,
+            'duration': self._cache_time,
         })
 
         return render_to_string('memcache_toolbar/panels/memcache.html',
