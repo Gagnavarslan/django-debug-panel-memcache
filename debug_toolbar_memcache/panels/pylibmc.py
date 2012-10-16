@@ -3,7 +3,7 @@ from __future__ import absolute_import
 
 from debug_toolbar.utils.tracking import replace_call
 
-from memcache_toolbar.panels import BasePanel, record
+from debug_toolbar_memcache.panels import BasePanel, record
 import logging
 
 DEBUG = False

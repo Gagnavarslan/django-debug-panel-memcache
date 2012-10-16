@@ -3,14 +3,14 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='memcache_toolbar',
-    version='0.5.2',
+    name='django-debug-toolbar-memcache',
+    version='0.6.0',
     description='',
-    author='Ross McFarland',
-    author_email='rwmcfa1@neces.com',
-    url='http://github.com/ross/memcache-debug-panel',
+    author='Eirikur Nilsson',
+    author_email='eirikur@gagnavarslan.is',
+    url='http://github.com/Gagnavarslan/django-debug-toolbar-memcache',
     packages=find_packages(exclude=('examples', 'examples.demo', 'test')),
-    provides=['memcache_toolbar'],
+    provides=['debug_toolbar_memcache'],
     requires=['Django', 'debug_toolbar'],
     include_package_data=True,
     zip_safe=False,

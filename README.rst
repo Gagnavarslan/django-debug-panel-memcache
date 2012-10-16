@@ -1,34 +1,29 @@
-======================
-Memcache Debug Toolbar
-======================
+=============================
+Django Debug Toolbar Memcache
+=============================
 
-The Memcache Debug Toolbar is an add-on for Django Debug Toolbar for tracking
-memcached usage. It currently supports both the ``pylibmc`` and ``memcache`` libraries.
+This is a fork of Ross's excellent Memcache Debug Toolbar. It's a Memcache Debug Toolbar
+is an add-on for Django Debug Toolbar for tracking memcached usage. It currently
+supports both the ``pylibmc`` and ``memcache`` libraries.
 
-This is definitely beta software, but I've found it useful in work and personal
-projects. Feedback welcome, patches appreciated. - Ross McFarland
+In the fork I'm using more of django-debug-toolbar to implement this panel. It is
+based on the sql toolbar and has similar presentation and information.
+
+I also did following technical changes:
+
+* No more inheriting client classes. Just using replace_call on the client methods. Which means explicit import is not needed
+* Use utilities from debug_toolbar. Not sure why that would blow up.
+* Record directly to panel instance instead of a Calls instance. Should be more thread safe.
+* Collect and display template information from the stack trace.
+* Display stacktrace and template info the same way sql panel does.
+* Use same row toggle logic as sql panel, skip extra jquery.
 
 Installation
 ============
 
 #. Install and configure `Django Debug Toolbar <https://github.com/django-debug-toolbar/django-debug-toolbar>`_.
 
-#. Add the ``memcache_toolbar`` app to your ``INSTALLED_APPS``.
-
-#. Import the panel corresponding to the library you're using.
-
-   The following must be imported in your ``settings.py`` file so that it has a
-   chance to replace the caching library with one capable of tracking. You'll
-   probably want to import it in ``local_settings.py`` (if you use the pattern) or
-   at least wrap the import line in ``if DEBUG``:
-
-   For ``memcache``::
-
-	import memcache_toolbar.panels.memcache
-
-   For ``pylibmc``::
-
-	import memcache_toolbar.panels.pylibmc
+#. Add the ``debug_toolbar_memcache`` app to your ``INSTALLED_APPS``.
 
 Configuration
 =============
@@ -41,7 +36,7 @@ Configuration
 
 	DEBUG_TOOLBAR_PANELS = (
             ...
-	    'memcache_toolbar.panels.memcache.MemcachePanel',
+	    'debug_toolbar_memcache.panels.memcache.MemcachePanel',
 	    # if you use pylibmc you'd include its panel instead
-	    # 'memcache_toolbar.panels.pylibmc.PylibmcPanel',
+	    # 'debug_toolbar_memcache.panels.pylibmc.PylibmcPanel',
 	)
